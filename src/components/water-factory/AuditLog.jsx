@@ -1,8 +1,16 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Printer, RotateCcw } from "lucide-react";
 
 export function AuditLog({ data, mutate, showToast }) {
-  const logs = data.auditLog || [];
+  // Ensure new actions always appear at the top by sorting in descending order of timestamp
+  const logs = useMemo(() => {
+    const rawLogs = data.auditLog || [];
+    return [...rawLogs].sort((a, b) => {
+      const timeA = new Date(a.ts || 0).getTime();
+      const timeB = new Date(b.ts || 0).getTime();
+      return timeB - timeA; // Newest first
+    });
+  }, [data.auditLog]);
 
   const handleResetAuditLog = () => {
     if (window.confirm("Are you sure you want to reset and clear the entire Audit Log?")) {

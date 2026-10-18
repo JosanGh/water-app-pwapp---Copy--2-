@@ -6,7 +6,7 @@ import {
   fmt,
   computeManagerAcceptedRolls,
   computeManagerAcceptedBags,
-} from "../lib/helpers";
+} from "../../lib/helpers";
 
 export function WarehouseModule({
   data = {},
@@ -131,88 +131,119 @@ function OwnerRollIntakeTab({ data = {}, mutate, showToast }) {
   const [kgPerRoll, setKgPerRoll] = useState("");
   const [supplier, setSupplier] = useState("");
   const [qty, setQty] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleCreateTypeAndIntake = (e) => {
+  const handleCreateTypeAndIntake = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return; // Prevent double-click execution
+
     const parsedQty = Number(qty) || 0;
     if (parsedQty <= 0) return showToast("Quantity must be positive!", "warn");
 
-    let typeId = selectedTypeId;
-    let typeName = rollTypeName;
-    let weightPerRoll = Number(kgPerRoll) || 0;
+    setIsSubmitting(true);
+    try {
+      let typeId = selectedTypeId;
+      let typeName = rollTypeName;
+      let weightPerRoll = Number(kgPerRoll) || 0;
 
-    if (selectedTypeId === "new") {
-      if (!rollTypeName.trim() || weightPerRoll <= 0) {
-        return showToast(
-          "Provide a valid Roll Type Name and Weight per roll!",
-          "warn",
+      if (selectedTypeId === "new") {
+        if (!rollTypeName.trim() || weightPerRoll <= 0) {
+          showToast(
+            "Provide a valid Roll Type Name and Weight per roll!",
+            "warn",
+          );
+          return;
+        }
+        const existing = (data?.rollTypes || []).find(
+          (t) =>
+            t.name.trim().toLowerCase() === rollTypeName.trim().toLowerCase() &&
+            Number(t.standardWeightKg) === weightPerRoll,
         );
-      }
-      const existing = (data?.rollTypes || []).find(
-        (t) =>
-          t.name.trim().toLowerCase() === rollTypeName.trim().toLowerCase() &&
-          Number(t.standardWeightKg) === weightPerRoll,
-      );
-      if (existing) {
-        typeId = existing.id;
-        typeName = existing.name;
-        weightPerRoll = Number(existing.standardWeightKg) || 0;
+        if (existing) {
+          typeId = existing.id;
+          typeName = existing.name;
+          weightPerRoll = Number(existing.standardWeightKg) || 0;
+        } else {
+          typeId = uid();
+        }
       } else {
-        typeId = uid();
-      }
-    } else {
-      const existing = (data?.rollTypes || []).find(
-        (t) => t.id === selectedTypeId,
-      );
-      if (existing) {
-        typeName = existing.name;
-        weightPerRoll = Number(existing.standardWeightKg) || 0;
-      }
-    }
-
-    mutate(
-      (prev) => {
-        const rollTypeExists = (prev?.rollTypes || []).some(
-          (t) => t.id === typeId,
+        const existing = (data?.rollTypes || []).find(
+          (t) => t.id === selectedTypeId,
         );
-        const nextRollTypes = rollTypeExists
-          ? prev.rollTypes
-          : [
-              ...(prev?.rollTypes || []),
+        if (existing) {
+          typeName = existing.name;
+          weightPerRoll = Number(existing.standardWeightKg) || 0;
+        }
+      }
+
+      mutate(
+        (prev) => {
+          const rollTypeExists = (prev?.rollTypes || []).some(
+            (t) => t.id === typeId,
+          );
+          const nextRollTypes = rollTypeExists
+            ? prev.rollTypes
+            : [
+                ...(prev?.rollTypes || []),
+                {
+                  id: typeId,
+                  name: typeName.trim(),
+                  standardWeightKg: weightPerRoll,
+                  yieldValue: 900,
+                },
+              ];
+
+          const existingIntakeIndex = (prev?.intake || []).findIndex(
+            (i) =>
+              i.rollTypeId === typeId &&
+              i.date === todayISO() &&
+              i.supplier === supplier,
+          );
+
+          let nextIntake;
+          if (existingIntakeIndex !== -1) {
+            nextIntake = [...(prev.intake || [])];
+            const target = nextIntake[existingIntakeIndex];
+
+            const updatedQty = target.qty + parsedQty;
+            nextIntake[existingIntakeIndex] = {
+              ...target,
+              qty: updatedQty,
+              weightKg: updatedQty * weightPerRoll,
+            };
+          } else {
+            nextIntake = [
               {
-                id: typeId,
-                name: typeName.trim(),
-                standardWeightKg: weightPerRoll,
-                yieldValue: 900,
+                id: uid(),
+                date: todayISO(),
+                rollTypeId: typeId,
+                supplier,
+                qty: parsedQty,
+                weightKg: parsedQty * weightPerRoll,
               },
+              ...(prev?.intake || []),
             ];
+          }
 
-        return {
-          ...prev,
-          rollTypes: nextRollTypes,
-          intake: [
-            {
-              id: uid(),
-              date: todayISO(),
-              rollTypeId: typeId,
-              supplier,
-              qty: parsedQty,
-              weightKg: parsedQty * weightPerRoll,
-            },
-            ...(prev?.intake || []),
-          ],
-        };
-      },
-      "Recorded Roll Intake",
-      `${parsedQty} rolls of ${typeName}`,
-    );
+          return {
+            ...prev,
+            rollTypes: nextRollTypes,
+            intake: nextIntake,
+          };
+        },
+        "Recorded Roll Intake",
+        `${parsedQty} rolls added to ${typeName}`,
+      );
 
-    setRollTypeName("");
-    setKgPerRoll("");
-    setSupplier("");
-    setQty("");
-    setSelectedTypeId("new");
-    showToast("Roll Intake Recorded!");
+      setRollTypeName("");
+      setKgPerRoll("");
+      setSupplier("");
+      setQty("");
+      setSelectedTypeId("new");
+      showToast("Roll Intake Recorded!");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -307,8 +338,12 @@ function OwnerRollIntakeTab({ data = {}, mutate, showToast }) {
             className="inp"
           />
         </div>
-        <button type="submit" className="btn-primary w-full">
-          <Plus size={15} /> Save Intake
+        <button
+          type="submit"
+          disabled={isSubmitting}
+          className="btn-primary w-full disabled:opacity-50"
+        >
+          <Plus size={15} /> {isSubmitting ? "Saving..." : "Save Intake"}
         </button>
       </form>
 

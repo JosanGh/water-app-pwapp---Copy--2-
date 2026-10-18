@@ -1,14 +1,19 @@
 import React, { useState } from "react";
 import { Droplets, Mail } from "lucide-react";
-import { getSupabaseStatus } from "../lib/supabaseClient";
+import { RedeemTokenModal } from "../components/subscriptions/RedeemTokenModal";
+import { getSupabaseStatus, supabase } from "../lib/supabaseClient";
 import { isValidOfflinePin } from "../lib/storage";
-import { TermsAndPolicy } from "./TermsAndPolicy";
+import { TermsAndPolicy } from "./water-factory/TermsAndPolicy";
 
 export function LoginScreen({
   error = "",
   workspaceRequired = false,
   passwordRecovery = false,
   companyName = "",
+  organizationId = null,
+  organizationRole = null,
+  subscriptionStatus = null,
+  graceUntil = null,
   onLogin,
   onSignUp,
   onResetPassword,
@@ -19,6 +24,7 @@ export function LoginScreen({
   offlineRecoveryRequired = false,
   offlineCompanyName = "",
   onUnlockOffline,
+  showToast = (msg) => alert(msg),
 }) {
   const [view, setView] = useState("login");
   const [email, setEmail] = useState("");
@@ -33,6 +39,9 @@ export function LoginScreen({
   const [message, setMessage] = useState("");
   const [formError, setFormError] = useState("");
   const [busy, setBusy] = useState(false);
+  
+  // Fixed: Hook moved to top level
+  const [isTokenModalOpen, setIsTokenModalOpen] = useState(false);
   const configured = getSupabaseStatus().configured;
 
   const run = async (action) => {
@@ -212,47 +221,107 @@ export function LoginScreen({
             </button>
           </form>
         ) : workspaceRequired ? (
-          <form onSubmit={handleCreateOrganization} className="space-y-4">
-            <h1 className="font-bold text-[#0B3B45] text-lg">
-              Create your company workspace
-            </h1>
-            <p className="text-sm text-[#5B6B68]">
-              This creates an isolated tenant. Your records are not copied from
-              legacy data automatically.
-            </p>
-            <label className="block text-xs font-semibold text-[#5B6B68] uppercase">
-              Company name
-              <input
-                value={newCompanyName}
-                onChange={(event) => setNewCompanyName(event.target.value)}
-                className="inp mt-1"
-                maxLength={160}
-                required
-              />
-            </label>
-            {(error || formError) && (
-              <p className="text-xs font-semibold text-[#C4472F]">
-                {formError || error}
+          <div className="space-y-4">
+            {/* Subscription Required & WhatsApp/Call Support Box */}
+            <div className="bg-white dark:bg-[#18262C] p-6 rounded-2xl border border-[#EDEFEA] dark:border-[#263A42] text-center space-y-4">
+              <div className="w-16 h-16 mx-auto rounded-xl bg-[#1C8C9E] flex items-center justify-center shadow-md">
+                <img src="./assets/images/ManasXplorer-logo.jpg" alt="ManasXplorer Logo" className="w-10 h-10 object-contain" />
+              </div>
+
+              <h2 className="text-base font-bold text-[#0B3B45] dark:text-cyan-200">
+                {organizationId ? "Workspace Subscription Required" : "Subscription Required"}
+              </h2>
+
+              <p className="text-xs text-gray-600 dark:text-gray-300">
+                {organizationId
+                  ? `${companyName} cannot access operations while its subscription is ${subscriptionStatus || "inactive"}.`
+                  : "A subscription is required before a new workspace can access operations."}
+                {subscriptionStatus === "grace_period" && graceUntil
+                  ? ` Grace access ends ${new Date(graceUntil).toLocaleDateString()}.`
+                  : " Contact support to acquire an activation token."}
               </p>
+
+              <div className="flex flex-col gap-2 pt-2">
+                <a
+                  href="https://wa.me/233542804240?text=Hello,%20I%20need%20a%20subscription%20token%20for%20my%20ERP%20workspace."
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full py-2.5 rounded-xl bg-emerald-600 text-white font-semibold text-xs flex items-center justify-center gap-2 hover:bg-emerald-700 transition-colors"
+                >
+                  💬 Chat on WhatsApp for Token
+                </a>
+
+                <a
+                  href="tel:+233542804240"
+                  className="w-full py-2.5 rounded-xl border border-[#DDE3DA] text-[#0B3B45] dark:text-cyan-300 font-semibold text-xs flex items-center justify-center gap-2 hover:bg-gray-50 dark:hover:bg-[#1C2C33]"
+                >
+                  📞 Call Support: +233 542 804 240
+                </a>
+
+                {organizationId && organizationRole === "owner" && (
+                  <button
+                    type="button"
+                    onClick={() => setIsTokenModalOpen(true)}
+                    className="btn-primary w-full py-2.5 text-xs mt-1"
+                  >
+                    I have a Subscription Token
+                  </button>
+                )}
+                {organizationId && organizationRole !== "owner" && (
+                  <p className="text-xs text-gray-600 dark:text-gray-300">
+                    Ask the company owner to redeem the subscription token.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Create Company Form */}
+            {!organizationId && (
+              <form onSubmit={handleCreateOrganization} className="space-y-4 pt-3 border-t border-[#DDE3DA]">
+                  <h1 className="font-bold text-[#0B3B45] text-lg">
+                    Create your company workspace
+                  </h1>
+                  <p className="text-sm text-[#5B6B68]">
+                    This creates an isolated tenant. Your records are not copied
+                    from legacy data automatically.
+                  </p>
+                  <label className="block text-xs font-semibold text-[#5B6B68] uppercase">
+                    Company name
+                    <input
+                      value={newCompanyName}
+                      onChange={(event) => setNewCompanyName(event.target.value)}
+                      className="inp mt-1"
+                      maxLength={160}
+                      required
+                    />
+                  </label>
+                  {(error || formError) && (
+                    <p className="text-xs font-semibold text-[#C4472F]">
+                      {formError || error}
+                    </p>
+                  )}
+                  {message && (
+                    <p className="text-xs font-semibold text-green-700">
+                      {message}
+                    </p>
+                  )}
+                  <button
+                    type="submit"
+                    className="btn-primary w-full py-2.5"
+                    disabled={busy || !configured}
+                  >
+                    {busy ? "Creating…" : "Create company"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWorkspaceMode("join")}
+                    className="w-full text-xs text-[#0B3B45] hover:underline"
+                  >
+                    Join an existing company with an invite code
+                  </button>
+                </form>
             )}
-            {message && (
-              <p className="text-xs font-semibold text-green-700">{message}</p>
-            )}
-            <button
-              type="submit"
-              className="btn-primary w-full py-2.5"
-              disabled={busy || !configured}
-            >
-              {busy ? "Creating…" : "Create company"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setWorkspaceMode("join")}
-              className="w-full text-xs text-[#0B3B45] hover:underline"
-            >
-              Join an existing company with an invite code
-            </button>
-          </form>
+          </div>
         ) : view === "reset" ? (
           <form onSubmit={handleReset} className="space-y-4">
             <h1 className="font-bold text-[#0B3B45] text-lg">
@@ -397,6 +466,7 @@ export function LoginScreen({
             </div>
           </form>
         )}
+
         {(offlineAccessAvailable || offlineRecoveryRequired) &&
           !passwordRecovery && (
           <form
@@ -457,7 +527,17 @@ export function LoginScreen({
                   : "Unlock offline workspace"}
             </button>
           </form>
-          )}
+        )}
+
+        {/* Token Redemption Modal Overlay */}
+        <RedeemTokenModal
+          isOpen={isTokenModalOpen}
+          onClose={() => setIsTokenModalOpen(false)}
+          organizationId={organizationId}
+          supabase={supabase}
+          showToast={showToast}
+          onSuccess={() => window.location.reload()}
+        />
       </div>
     </div>
   );

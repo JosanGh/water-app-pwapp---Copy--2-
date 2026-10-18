@@ -12,7 +12,7 @@ import {
   RotateCw,
   PackageCheck,
 } from "lucide-react";
-import { DEFAULT_EXPENSE_CATEGORIES } from "../lib/storage";
+import { DEFAULT_EXPENSE_CATEGORIES } from "../../lib/storage";
 import {
   uid,
   todayISO,
@@ -25,7 +25,7 @@ import {
   computeDailyMetrics,
   computeWeeklyMetrics,
   getTimeUntilMidnight,
-} from "../lib/helpers";
+} from "../../lib/helpers";
 import { Visualizations } from "./Visualizations";
 import { DailyWeeklySection } from "./DailyWeeklySection";
 import { QuickActionModals } from "./QuickActionModals";
@@ -182,46 +182,36 @@ export function Dashboard({
           ].includes(session?.name);
     };
     const activities = [
-      ...(data?.auditLog || [])
-        .filter(isOwn)
-        .map((entry) => ({
-          id: entry.id,
-          date: entry.ts?.slice(0, 10) || "",
-          kind: entry.action,
-          detail: entry.detail,
-        })),
-      ...(data?.productionRuns || [])
-        .filter(isOwn)
-        .map((entry) => ({
-          id: entry.id,
-          date: entry.date,
-          kind: "Production",
-          detail: `${entry.netAvailableBags ?? entry.bagsProduced ?? entry.actualBags ?? 0} bags produced`,
-        })),
-      ...(data?.sales || [])
-        .filter(isOwn)
-        .map((entry) => ({
-          id: entry.id,
-          date: entry.date,
-          kind: "Sale",
-          detail: `${entry.bagsSold || 0} bags · ${fmtGHS(entry.totalAmount || entry.amountPaid || 0)}`,
-        })),
-      ...(data?.expenses || [])
-        .filter(isOwn)
-        .map((entry) => ({
-          id: entry.id,
-          date: entry.date,
-          kind: "Expense",
-          detail: `${entry.description} · ${fmtGHS(entry.amount)}`,
-        })),
-      ...(data?.bankDeposits || [])
-        .filter(isOwn)
-        .map((entry) => ({
-          id: entry.id,
-          date: entry.date,
-          kind: "Bank deposit",
-          detail: `${entry.bankName} · ${fmtGHS(entry.amount)}`,
-        })),
+      ...(data?.auditLog || []).filter(isOwn).map((entry) => ({
+        id: entry.id,
+        date: entry.ts?.slice(0, 10) || "",
+        kind: entry.action,
+        detail: entry.detail,
+      })),
+      ...(data?.productionRuns || []).filter(isOwn).map((entry) => ({
+        id: entry.id,
+        date: entry.date,
+        kind: "Production",
+        detail: `${entry.netAvailableBags ?? entry.bagsProduced ?? entry.actualBags ?? 0} bags produced`,
+      })),
+      ...(data?.sales || []).filter(isOwn).map((entry) => ({
+        id: entry.id,
+        date: entry.date,
+        kind: "Sale",
+        detail: `${entry.bagsSold || 0} bags · ${fmtGHS(entry.totalAmount || entry.amountPaid || 0)}`,
+      })),
+      ...(data?.expenses || []).filter(isOwn).map((entry) => ({
+        id: entry.id,
+        date: entry.date,
+        kind: "Expense",
+        detail: `${entry.description} · ${fmtGHS(entry.amount)}`,
+      })),
+      ...(data?.bankDeposits || []).filter(isOwn).map((entry) => ({
+        id: entry.id,
+        date: entry.date,
+        kind: "Bank deposit",
+        detail: `${entry.bankName} · ${fmtGHS(entry.amount)}`,
+      })),
     ];
     return activities
       .sort((a, b) => String(b.date).localeCompare(String(a.date)))
@@ -334,6 +324,46 @@ export function Dashboard({
     0,
     allTimeBagIntakeQty - allTimeBagIssuanceQty,
   );
+
+  const issuanceActivity = useMemo(() => {
+    const rollNames = new Map(
+      (data?.rollTypes || []).map((type) => [type.id, type.name]),
+    );
+    const bagNames = new Map(
+      (data?.bagTypes || []).map((type) => [type.id, type.name]),
+    );
+    const records = [
+      ...(data?.issuance || []).map((entry) => ({
+        ...entry,
+        category: "Roll",
+        itemName:
+          entry.itemName ||
+          rollNames.get(entry.rollTypeId || entry.itemId) ||
+          "Roll",
+      })),
+      ...(data?.bagIssuance || []).map((entry) => ({
+        ...entry,
+        category: "Packing bag",
+        itemName:
+          entry.itemName ||
+          bagNames.get(entry.bagTypeId || entry.itemId) ||
+          "Packing bag",
+      })),
+    ];
+
+    return records
+      .sort((a, b) =>
+        String(b.date || b.createdAt || "").localeCompare(
+          String(a.date || a.createdAt || ""),
+        ),
+      )
+      .slice(0, 10);
+  }, [
+    data?.bagIssuance,
+    data?.bagTypes,
+    data?.issuance,
+    data?.rollTypes,
+  ]);
 
   const allExpensesCategorized = useMemo(() => {
     const list = [
@@ -625,6 +655,94 @@ export function Dashboard({
           </div>
         </div>
       </div>
+
+      <section className="overflow-hidden rounded-2xl border border-[#DDE3DA] bg-white shadow-xs transition-colors dark:border-[#233840] dark:bg-[#121E23]">
+        <div className="flex flex-col gap-3 border-b border-gray-100 p-4 dark:border-gray-800 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+          <div>
+            <h2 className="font-bold text-[#0B3B45] dark:text-[#E2E8F0]">
+              Manager Issuance
+            </h2>
+            <p className="mt-1 text-xs text-[#5B6B68] dark:text-gray-400">
+              Issued roll and packing-bag quantities, visible to the owner and
+              manager.
+            </p>
+          </div>
+          <div className="flex gap-2 text-xs">
+            <span className="rounded-lg bg-teal-50 px-3 py-2 font-semibold text-teal-800 dark:bg-teal-950/60 dark:text-teal-300">
+              Rolls: {fmt(allTimeRollIssuancePcs, 0)}
+            </span>
+            <span className="rounded-lg bg-amber-50 px-3 py-2 font-semibold text-amber-800 dark:bg-amber-950/50 dark:text-amber-300">
+              Bags: {fmt(allTimeBagIssuanceQty, 0)}
+            </span>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[700px] text-left text-xs">
+            <thead className="bg-[#F7F8F5] text-[10px] uppercase tracking-wide text-gray-500 dark:bg-[#18262C] dark:text-gray-400">
+              <tr>
+                <th className="px-4 py-3">Date</th>
+                <th className="px-4 py-3">Item</th>
+                <th className="px-4 py-3">Quantity</th>
+                <th className="px-4 py-3">Recipient</th>
+                <th className="px-4 py-3">Issued by</th>
+                <th className="px-4 py-3">Status / confirmation</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+              {issuanceActivity.length ? (
+                issuanceActivity.map((entry, index) => (
+                  <tr
+                    key={entry.id || `${entry.category}-${entry.date}-${index}`}
+                    className="text-[#16211F] dark:text-gray-200"
+                  >
+                    <td className="whitespace-nowrap px-4 py-3">
+                      {entry.date || entry.createdAt?.slice(0, 10) || "—"}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="font-semibold">{entry.itemName}</span>
+                      <span className="ml-2 text-gray-500 dark:text-gray-400">
+                        {entry.category}
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 font-mono font-semibold">
+                      {fmt(Number(entry.qty) || 0, 0)}{" "}
+                      {entry.category === "Roll" ? "rolls" : "pcs"}
+                    </td>
+                    <td className="px-4 py-3">
+                      {entry.recipient || entry.issuedTo || "Manager"}
+                    </td>
+                    <td className="px-4 py-3">
+                      {entry.issuedBy || entry.recordedBy || "—"}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="font-semibold">
+                        {entry.status || entry.distributionType || "Recorded"}
+                      </span>
+                      {entry.confirmedBy && (
+                        <span className="block text-[10px] text-gray-500 dark:text-gray-400">
+                          Confirmed by {entry.confirmedBy}
+                          {entry.physicalCount != null
+                            ? ` · ${entry.physicalCount} counted`
+                            : ""}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td
+                    colSpan={6}
+                    className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400"
+                  >
+                    No roll or packing-bag issuance has been recorded yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       {/* REAL-TIME DATA VISUALIZATION SECTION */}
       <Visualizations

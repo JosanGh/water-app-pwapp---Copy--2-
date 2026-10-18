@@ -4,13 +4,21 @@ const jwt = require('jsonwebtoken');
 const withAuth = (handler) => {
   return async (event, context) => {
     if (event.httpMethod !== "POST") {
-      return { statusCode: 405, body: "Method Not Allowed" };
+      return { 
+        statusCode: 405, 
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ error: "Method Not Allowed" }) 
+      };
     }
 
     const authHeader = event.headers.authorization || event.headers.Authorization;
 
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return { statusCode: 401, body: JSON.stringify({ error: "Unauthorized. Missing token." }) };
+      return { 
+        statusCode: 401, 
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ error: "Unauthorized. Missing token." }) 
+      };
     }
 
     // Split "Bearer <token>" to extract the token string
@@ -33,12 +41,23 @@ const withAuth = (handler) => {
     } catch (error) {
       console.error("Auth Failure:", error.message);
       
+      let errorMessage = "Forbidden or invalid token";
+      let statusCode = 403;
+
       // Specifically inform frontend if token expired so it can attempt a refresh
       if (error.name === 'TokenExpiredError') {
-        return { statusCode: 401, body: JSON.stringify({ error: "TokenExpired" }) };
+        errorMessage = "TokenExpired";
+        statusCode = 401;
+      } else if (error.name === 'JsonWebTokenError') {
+        errorMessage = "Malformed or invalid token signature";
+        statusCode = 401;
       }
-      
-      return { statusCode: 403, body: JSON.stringify({ error: "Forbidden or invalid token" }) };
+
+      return { 
+        statusCode, 
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ error: errorMessage }) 
+      };
     }
   };
 };
