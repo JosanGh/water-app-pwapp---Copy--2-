@@ -1,8 +1,8 @@
-// netlify/functions/utils/authMiddleware.js
 const jwt = require('jsonwebtoken');
 
 const withAuth = (handler) => {
   return async (event, context) => {
+    // 1. Enforce strict POST request rules
     if (event.httpMethod !== "POST") {
       return { 
         statusCode: 405, 
@@ -11,7 +11,9 @@ const withAuth = (handler) => {
       };
     }
 
-    const authHeader = event.headers.authorization || event.headers.Authorization;
+    // 2. Normalize headers to lower-case keys safely to prevent casing mismatches
+    const headers = event.headers || {};
+    const authHeader = headers.authorization || headers.Authorization;
 
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return { 
@@ -27,7 +29,12 @@ const withAuth = (handler) => {
     try {
       const SECRET_KEY = process.env.JWT_SECRET_TOKEN;
       if (!SECRET_KEY) {
-        throw new Error("Server misconfiguration: JWT_SECRET_TOKEN environment variable is missing.");
+        console.error("Critical Error: JWT_SECRET_TOKEN environment variable is missing.");
+        return {
+          statusCode: 500,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ error: "Internal server configuration error." })
+        };
       }
 
       // Verify token authenticity and expiration
@@ -39,24 +46,31 @@ const withAuth = (handler) => {
       return await handler(event, context);
       
     } catch (error) {
-      console.error("Auth Failure:", error.message);
+      console.log("Auth Verification Failure Name:", error.name);
+      console.error("Auth Failure Message:", error.message);
       
-      let errorMessage = "Forbidden or invalid token";
-      let statusCode = 403;
-
-      // Specifically inform frontend if token expired so it can attempt a refresh
+      // Explicitly handle JWT errors vs generic errors
       if (error.name === 'TokenExpiredError') {
-        errorMessage = "TokenExpired";
-        statusCode = 401;
-      } else if (error.name === 'JsonWebTokenError') {
-        errorMessage = "Malformed or invalid token signature";
-        statusCode = 401;
+        return { 
+          statusCode: 401, 
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ error: "TokenExpired" }) 
+        };
+      } 
+      
+      if (error.name === 'JsonWebTokenError' || error.name === 'NotBeforeError') {
+        return { 
+          statusCode: 401, 
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ error: "Malformed or invalid token signature" }) 
+        };
       }
 
+      // Catch-all for unexpected runtime errors inside the try block
       return { 
-        statusCode, 
+        statusCode: 500, 
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ error: errorMessage }) 
+        body: JSON.stringify({ error: "Internal server authentication error" }) 
       };
     }
   };

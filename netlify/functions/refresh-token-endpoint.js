@@ -1,4 +1,3 @@
-// netlify/functions/refresh-token-endpoint.js
 const jwt = require('jsonwebtoken');
 
 exports.handler = async (event, _context) => {
@@ -7,14 +6,22 @@ exports.handler = async (event, _context) => {
     return { statusCode: 405, body: "Method Not Allowed" };
   }
 
-  // 2. Extract cookies from request headers
+  // 2. Extract and robustly parse cookies from request headers
   const cookieHeader = event.headers.cookie || event.headers.Cookie || '';
-  const cookies = Object.fromEntries(cookieHeader.split('; ').map(c => c.split('=')));
-  const refreshToken = cookies.pwa_refresh_token; // The browser sends this automatically
+  const cookies = cookieHeader
+    .split(';')
+    .map(cookie => cookie.trim().split('='))
+    .reduce((acc, [key, value]) => {
+      if (key) acc[key] = decodeURIComponent(value || '');
+      return acc;
+    }, {});
+
+  const refreshToken = cookies.pwa_refresh_token;
 
   if (!refreshToken) {
     return { 
       statusCode: 401, 
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ error: "Session expired. Please log in again." }) 
     };
   }
@@ -24,7 +31,12 @@ exports.handler = async (event, _context) => {
     const ACCESS_SECRET = process.env.JWT_SECRET_TOKEN;
 
     if (!REFRESH_SECRET || !ACCESS_SECRET) {
-      throw new Error("Server environment variables are misconfigured.");
+      console.error("Critical: Server environment variables JWT_REFRESH_SECRET or JWT_SECRET_TOKEN are missing.");
+      return {
+        statusCode: 500,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ error: "Internal server configuration error." })
+      };
     }
 
     // 3. Verify the validity of the refresh token signature
@@ -39,15 +51,26 @@ exports.handler = async (event, _context) => {
 
     return {
       statusCode: 200,
-      headers: { "Content-Type": "application/json" },
+      headers: { 
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store" 
+      },
       body: JSON.stringify({ accessToken: newAccessToken })
     };
 
   } catch (error) {
     console.error("Refresh processing failure:", error.message);
+    
+    // Differentiate between expired tokens vs invalid/forged signatures if needed, 
+    // otherwise gracefully reject compromised/invalid tokens with 403.
+    const errorMessage = error.name === 'TokenExpiredError' 
+      ? "Refresh token has expired. Please log in again." 
+      : "Invalid or compromised refresh token session.";
+
     return { 
       statusCode: 403, 
-      body: JSON.stringify({ error: "Invalid or compromised refresh token session." }) 
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ error: errorMessage }) 
     };
   }
 };

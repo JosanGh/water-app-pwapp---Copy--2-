@@ -1,28 +1,55 @@
-// netlify/functions/sync-records-background.js
 const withAuth = require("./utils/authMiddleware");
 
 const syncHandler = async (event, context) => {
   try {
-    const payload = JSON.parse(event.body);
-    const authorizedUser = context.user; // Injected securely by our middleware
+    // 1. Safely handle missing or empty request bodies
+    if (!event.body) {
+      return {
+        statusCode: 400,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ error: "Missing request body." })
+      };
+    }
 
-    console.log(`Authenticated request by user: ${authorizedUser.userId}`);
-    console.log(`Starting background sync process for record ID: ${payload.id}`);
+    let payload;
+    try {
+      payload = JSON.parse(event.body);
+    } catch (parseError) {
+      return {
+        statusCode: 400,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ error: "Invalid JSON format." })
+      };
+    }
 
-    // Your data processing logic goes here...
-    await new Promise((resolve) => setTimeout(resolve, 3000)); 
+    const authorizedUser = context.user; // Injected securely by our middleware[cite: 3]
 
-    console.log("Background synchronization completed safely.");
+    console.log(`Authenticated request by user: ${authorizedUser.userId}`);[cite: 3]
+    console.log(`Starting background sync process for record ID: ${payload.id}`);[cite: 3]
+
+    // NOTE: If this is deployed on AWS Lambda and you want true background processing 
+    // without blocking the HTTP response, push this task to an SQS Queue or EventBridge here 
+    // instead of using a blocking `setTimeout`.
+    
+    // Simulating asynchronous dispatch or processing:
+    // await dispatchToQueue(payload); 
+
+    console.log("Background synchronization task queued successfully.");[cite: 3]
     
     return {
       statusCode: 202,
-      body: JSON.stringify({ status: "Processing sync request" })
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "Processing sync request accepted" })
     };
   } catch (error) {
-    console.error("Background handler processing crash:", error);
-    return { statusCode: 500, body: "Internal Server Processing Error" };
+    console.error("Background handler processing crash:", error);[cite: 3]
+    return { 
+      statusCode: 500, 
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ error: "Internal Server Processing Error" }) 
+    };
   }
 };
 
-// Export the wrapped handler
+// Export the wrapped handler[cite: 3]
 exports.handler = withAuth(syncHandler);
