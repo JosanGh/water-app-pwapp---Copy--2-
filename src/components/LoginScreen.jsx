@@ -4,6 +4,30 @@ import { RedeemTokenModal } from "../components/subscriptions/RedeemTokenModal";
 import { getSupabaseStatus, supabase } from "../lib/supabaseClient";
 import { isValidOfflinePin } from "../lib/storage";
 import { TermsAndPolicy } from "./water-factory/TermsAndPolicy";
+import { PRODUCT_OPTIONS, PRODUCTS } from "../config/products";
+
+function WorkspaceProductSelect({ value, onChange }) {
+  return (
+    <label className="block text-xs font-semibold text-[#5B6B68] uppercase">
+      Workspace
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="inp mt-1"
+        required
+      >
+        {PRODUCT_OPTIONS.map((product) => (
+          <option key={product.id} value={product.id}>
+            {product.name}
+          </option>
+        ))}
+      </select>
+      <span className="mt-1 block normal-case font-normal">
+        Each workspace is separate and needs its own subscription.
+      </span>
+    </label>
+  );
+}
 
 export function LoginScreen({
   error = "",
@@ -24,6 +48,8 @@ export function LoginScreen({
   offlineRecoveryRequired = false,
   offlineCompanyName = "",
   onUnlockOffline,
+  workspaceProductId = PRODUCTS.water.id,
+  onWorkspaceProductChange = () => {},
   showToast = (msg) => alert(msg),
 }) {
   const [view, setView] = useState("login");
@@ -33,6 +59,8 @@ export function LoginScreen({
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [newCompanyName, setNewCompanyName] = useState("");
+  const [selectedWorkspaceProduct, setSelectedWorkspaceProduct] =
+    useState(workspaceProductId);
   const [inviteCode, setInviteCode] = useState("");
   const [fullName, setFullName] = useState("");
   const [workspaceMode, setWorkspaceMode] = useState("create");
@@ -69,10 +97,14 @@ export function LoginScreen({
       return;
     }
     run(async () => {
-      const signedIn = await onSignUp(email, password);
+      const signedIn = await onSignUp(
+        email,
+        password,
+        selectedWorkspaceProduct,
+      );
       setMessage(
         signedIn
-          ? "Account created. Create your company workspace to continue."
+          ? `Account created. Register your ${PRODUCT_OPTIONS.find((p) => p.id === selectedWorkspaceProduct)?.name || "selected"} workspace to continue.`
           : "Check your email to verify your account, then sign in.",
       );
     });
@@ -101,7 +133,14 @@ export function LoginScreen({
 
   const handleCreateOrganization = (event) => {
     event.preventDefault();
-    run(() => onCreateOrganization(newCompanyName));
+    run(() =>
+      onCreateOrganization(newCompanyName, selectedWorkspaceProduct),
+    );
+  };
+
+  const handleWorkspaceProductChange = (productId) => {
+    setSelectedWorkspaceProduct(productId);
+    onWorkspaceProductChange(productId);
   };
 
   return (
@@ -285,6 +324,10 @@ export function LoginScreen({
                     This creates an isolated tenant. Your records are not copied
                     from legacy data automatically.
                   </p>
+                  <WorkspaceProductSelect
+                    value={selectedWorkspaceProduct}
+                    onChange={handleWorkspaceProductChange}
+                  />
                   <label className="block text-xs font-semibold text-[#5B6B68] uppercase">
                     Company name
                     <input
@@ -366,6 +409,10 @@ export function LoginScreen({
             onSubmit={view === "signup" ? handleSignUp : handleLogin}
             className="space-y-4"
           >
+            <WorkspaceProductSelect
+              value={selectedWorkspaceProduct}
+              onChange={handleWorkspaceProductChange}
+            />
             {!configured && (
               <p className="text-xs font-semibold text-[#C4472F]">
                 Cloud authentication is not configured. Sign-in is disabled.

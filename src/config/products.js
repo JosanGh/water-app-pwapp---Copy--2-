@@ -1,4 +1,8 @@
 export const PRODUCTS = {
+  water: {
+    id: "water",
+    name: "Water Factory",
+  },
   electricalShop: {
     id: "electrical-shop",
     name: "Electrical Shop",
@@ -9,5 +13,12 @@ export const PRODUCTS = {
   },
 };
 
+export const PRODUCT_OPTIONS = Object.values(PRODUCTS);
+
+export const getProduct = (productId) =>
+  PRODUCT_OPTIONS.find((product) => product.id === productId) || null;
+
 export const isProductPage = (pageId) =>
-  Object.values(PRODUCTS).some((product) => product.id === pageId);
+  PRODUCT_OPTIONS.some(
+    (product) => product.id !== PRODUCTS.water.id && product.id === pageId,
+  );

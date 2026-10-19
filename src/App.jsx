@@ -114,6 +114,7 @@ const SubscriptionAdminPortal = lazy(() =>
   })),
 );
 const ACTIVE_PAGE_KEY = "pureledger_active_page";
+const WORKSPACE_PRODUCT_KEY = "pureledger_workspace_product";
 
 class WorkspacePageBoundary extends Component {
   state = { failed: false };
@@ -164,6 +165,14 @@ export default function App() {
   const [page, setPage] = useState(() => {
     return sessionStorage.getItem(ACTIVE_PAGE_KEY) || "dashboard";
   });
+  const [workspaceProductId, setWorkspaceProductId] = useState(() => {
+    const savedProduct = sessionStorage.getItem(WORKSPACE_PRODUCT_KEY);
+    return Object.values(PRODUCTS).some(
+      (product) => product.id === savedProduct,
+    )
+      ? savedProduct
+      : PRODUCTS.water.id;
+  });
 
   const [data, setData] = useState(emptyData);
   const [loaded, setLoaded] = useState(false);
@@ -181,6 +190,7 @@ export default function App() {
   const saveQueueRef = useRef(Promise.resolve());
   const offlineKeyRef = useRef(null);
   const offlineOnlyRef = useRef(false);
+  const expiryReminderRunRef = useRef("");
 
   useEffect(() => {
     document.title = organization?.name || "Water Operations";
@@ -197,11 +207,20 @@ export default function App() {
     };
   }, [organization]);
 
+  const handleWorkspaceProductChange = useCallback((productId) => {
+    if (!Object.values(PRODUCTS).some((product) => product.id === productId)) {
+      return;
+    }
+    sessionStorage.setItem(WORKSPACE_PRODUCT_KEY, productId);
+    setWorkspaceProductId(productId);
+  }, []);
+
   const activateUser = useCallback(async (
     user,
     offlineOrganization = null,
     offlineSnapshot = null,
     offlineKey = null,
+    selectedProductId = workspaceProductId,
   ) => {
     setAuthError("");
     const isPlatformAdmin =
@@ -217,7 +236,8 @@ export default function App() {
     }
 
     const memberOrganization =
-      offlineOrganization || (await getOrganization(user.id));
+      offlineOrganization ||
+      (await getOrganization(user.id, selectedProductId));
     if (!memberOrganization) {
       setAuthUser(user);
       setOrganization(null);
@@ -272,7 +292,7 @@ export default function App() {
       },
     });
     setLoaded(true);
-  }, []);
+  }, [workspaceProductId]);
 
   useEffect(() => {
     if (!session || !organization) return undefined;
@@ -341,7 +361,14 @@ export default function App() {
                 "No saved company session is available offline. Connect to the internet and sign in first.",
               );
             }
-            await activateUser(user, cachedOrganization);
+            handleWorkspaceProductChange(cachedOrganization.productId);
+            await activateUser(
+              user,
+              cachedOrganization,
+              null,
+              null,
+              cachedOrganization.productId,
+            );
           }
         }
       } catch (error) {
@@ -371,7 +398,7 @@ export default function App() {
       active = false;
       subscription?.unsubscribe();
     };
-  }, [activateUser, showToast]);
+  }, [activateUser, handleWorkspaceProductChange, showToast]);
 
   // Persist current page to sessionStorage when changed
   const handlePageChange = useCallback((newPage) => {
@@ -380,12 +407,21 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!session || hasPermission(session.role, page) || isProductPage(page)) {
+    if (!session || !organization) return;
+    if (organization.productId !== PRODUCTS.water.id) {
+      if (page !== organization.productId) {
+        handlePageChange(organization.productId);
+      }
       return;
     }
-    const landingPage = getRoleMeta(session.role).defaultLandingPage;
-    if (landingPage !== page) handlePageChange(landingPage);
-  }, [handlePageChange, page, session]);
+    if (
+      isProductPage(page) ||
+      !hasPermission(session.role, page)
+    ) {
+      const landingPage = getRoleMeta(session.role).defaultLandingPage;
+      if (landingPage !== page) handlePageChange(landingPage);
+    }
+  }, [handlePageChange, organization, page, session]);
 
   const persistTenantData = useCallback(
     (nextData, tenant = organization) => {
@@ -556,32 +592,106 @@ export default function App() {
     [session, persistTenantData, showToast, syncStatus],
   );
 
-  const handleLogin = async (email, password) => {
+  useEffect(() => {
+    if (
+      !loaded ||
+      !session ||
+      !organization ||
+      session.role !== "owner" ||
+      !organization.expiresAt ||
+      organization.subscriptionPlan === "one-time"
+    ) {
+      return undefined;
+    }
+
+    const checkForExpiryReminder = () => {
+      const expiresAt = new Date(organization.expiresAt).getTime();
+      const now = Date.now();
+      const daysRemaining = Math.ceil((expiresAt - now) / 86_400_000);
+      if (!Number.isFinite(expiresAt) || daysRemaining < 0 || daysRemaining > 14) {
+        return;
+      }
+
+      const today = new Date(now).toISOString().slice(0, 10);
+      const expiryDay = new Date(expiresAt).toISOString().slice(0, 10);
+      const reminderId = `subscription-expiry-${organization.id}-${expiryDay}-${today}`;
+      if (
+        expiryReminderRunRef.current === reminderId ||
+        data.notifications?.some((notification) => notification.id === reminderId)
+      ) {
+        return;
+      }
+      expiryReminderRunRef.current = reminderId;
+      mutate(
+        (previous) => ({
+          ...previous,
+          notifications: [
+            {
+              id: reminderId,
+              title: "Subscription expiry reminder",
+              msg:
+                daysRemaining === 0
+                  ? `${organization.name} subscription expires today. Renew to avoid interruption.`
+                  : `${organization.name} subscription expires in ${daysRemaining} day${daysRemaining === 1 ? "" : "s"} (${new Date(expiresAt).toLocaleDateString()}). Renew to avoid interruption.`,
+              ts: new Date(now).toISOString(),
+              read: false,
+            },
+            ...(previous.notifications || []),
+          ],
+        }),
+        "Subscription expiry reminder",
+        `Owner notified with ${daysRemaining} days remaining`,
+      );
+    };
+
+    checkForExpiryReminder();
+    const interval = window.setInterval(
+      checkForExpiryReminder,
+      6 * 60 * 60 * 1000,
+    );
+    return () => window.clearInterval(interval);
+  }, [data.notifications, loaded, mutate, organization, session]);
+
+  const handleLogin = async (
+    email,
+    password,
+    selectedProductId = workspaceProductId,
+  ) => {
     try {
       const user = await signIn(email, password);
+      handleWorkspaceProductChange(selectedProductId);
       const profile = getOfflineAccessProfile();
       offlineOnlyRef.current = false;
       offlineKeyRef.current = null;
-      if (profile?.userId === user.id && profile.pending) {
+      if (
+        profile?.userId === user.id &&
+        profile.organization?.productId === selectedProductId &&
+        profile.pending
+      ) {
         setAuthUser(user);
         setOfflineRecoveryRequired(true);
         setAuthError("");
         return;
       }
-      await activateUser(user);
+      await activateUser(user, null, null, null, selectedProductId);
       showToast(`Signed in as ${user.email}`);
     } catch (error) {
       setAuthError(error.message);
     }
   };
 
-  const handleSignUp = async (email, password) => {
+  const handleSignUp = async (
+    email,
+    password,
+    selectedProductId = workspaceProductId,
+  ) => {
     try {
       const result = await signUp(email, password);
+      handleWorkspaceProductChange(selectedProductId);
       if (result.user && result.session) {
         offlineOnlyRef.current = false;
         offlineKeyRef.current = null;
-        await activateUser(result.user);
+        await activateUser(result.user, null, null, null, selectedProductId);
       }
       return Boolean(result.session);
     } catch (error) {
@@ -590,7 +700,10 @@ export default function App() {
     }
   };
 
-  const handleCreateOrganization = async (name) => {
+  const handleCreateOrganization = async (
+    name,
+    selectedProductId = workspaceProductId,
+  ) => {
     if (!authUser) {
       setAuthError("Sign in before creating a company workspace.");
       return;
@@ -598,10 +711,11 @@ export default function App() {
     try {
       setAuthError("");
       const memberOrganization =
-        (await getOrganization(authUser.id)) ||
-        (await createOrganization(name, authUser.id));
+        (await getOrganization(authUser.id, selectedProductId)) ||
+        (await createOrganization(name, authUser.id, selectedProductId));
+      handleWorkspaceProductChange(selectedProductId);
       await activateUser(authUser, memberOrganization);
-      showToast("Company workspace created.");
+      showToast(`${memberOrganization.name} workspace is ready for subscription.`);
     } catch (error) {
       setAuthError(error.message);
     }
@@ -611,7 +725,7 @@ export default function App() {
     try {
       await acceptOrganizationInvite(code, fullName);
       offlineOnlyRef.current = false;
-      await activateUser(authUser);
+      await activateUser(authUser, null, null, null, workspaceProductId);
     } catch (error) {
       setAuthError(error.message);
     }
@@ -733,7 +847,10 @@ export default function App() {
     if (organization) {
       await saveQueueRef.current;
       let result;
-      if (offlineProfile?.userId === organization.userId) {
+      if (
+        offlineProfile?.userId === organization.userId &&
+        offlineProfile.organization?.id === organization.id
+      ) {
         try {
           const key = offlinePin
             ? (await unlockOfflineAccess(offlinePin)).key
@@ -1002,6 +1119,8 @@ export default function App() {
         onCreateOrganization={handleCreateOrganization}
         onJoinOrganization={handleJoinOrganization}
         onUnlockOffline={handleOfflineUnlock}
+        workspaceProductId={workspaceProductId}
+        onWorkspaceProductChange={handleWorkspaceProductChange}
       />
     );
   }
@@ -1014,10 +1133,16 @@ export default function App() {
     );
   }
 
+  const isCurrentProductPage =
+    isProductPage(page) && page === organization.productId;
   const activePage =
-    hasPermission(session.role, page) || isProductPage(page)
-      ? page
-      : getRoleMeta(session.role).defaultLandingPage;
+    organization.productId !== PRODUCTS.water.id
+      ? organization.productId
+      : isCurrentProductPage
+        ? page
+        : hasPermission(session.role, page)
+          ? page
+          : getRoleMeta(session.role).defaultLandingPage;
 
   return (
     <div className="min-h-screen bg-[#F2F4EF] text-[#16211F] font-body">
@@ -1030,10 +1155,12 @@ export default function App() {
             setMobileNavOpen(false);
           }}
           role={session.role}
+          productId={organization.productId}
           companyName={organization.name}
           onLogout={handleLogout}
           offlineAccessEnabled={
-            offlineProfile?.userId === organization.userId
+            offlineProfile?.userId === organization.userId &&
+            offlineProfile.organization?.id === organization.id
           }
           open={mobileNavOpen}
           onClose={() => setMobileNavOpen(false)}
@@ -1049,7 +1176,8 @@ export default function App() {
             data={data}
             mutate={mutate}
             offlineAccessEnabled={
-              offlineProfile?.userId === organization.userId
+              offlineProfile?.userId === organization.userId &&
+              offlineProfile.organization?.id === organization.id
             }
             offlineOnly={offlineOnlyRef.current}
             onEnableOfflineAccess={handleEnableOfflineAccess}
@@ -1163,10 +1291,12 @@ export default function App() {
               {activePage === "terms" && (
                 <TermsAndPolicy companyName={organization.name} />
               )}
-              {activePage === PRODUCTS.electricalShop.id && (
+              {organization.productId === PRODUCTS.electricalShop.id &&
+                activePage === PRODUCTS.electricalShop.id && (
                 <ElectricalShopDashboard />
               )}
-              {activePage === PRODUCTS.supermarket.id && (
+              {organization.productId === PRODUCTS.supermarket.id &&
+                activePage === PRODUCTS.supermarket.id && (
                 <SupermarketDashboard />
               )}
               </Suspense>

@@ -15,17 +15,16 @@ import {
   KeyRound,
   FileText,
   ClipboardList,
-  Store,
-  ShoppingBasket,
 } from "lucide-react";
 import { getRoleMeta, hasPermission } from "../../config/roles";
-import { PRODUCTS } from "../../config/products";
+import { getProduct, PRODUCTS } from "../../config/products";
 import { isValidOfflinePin } from "../../lib/storage";
 
 export function Sidebar({
   page,
   setPage,
   role,
+  productId,
   companyName,
   onLogout,
   open,
@@ -49,7 +48,11 @@ export function Sidebar({
   ];
 
   // Filter navigation items using central hasPermission utility
-  const visibleItems = items.filter((item) => hasPermission(role, item.id));
+  const visibleItems =
+    productId === PRODUCTS.water.id
+      ? items.filter((item) => hasPermission(role, item.id))
+      : [];
+  const currentProduct = getProduct(productId);
 
   return (
     <>
@@ -76,6 +79,11 @@ export function Sidebar({
           </button>
         </div>
         <nav className="flex-1 space-y-1">
+          {currentProduct && productId !== PRODUCTS.water.id && (
+            <p className="px-3 py-2 text-xs font-semibold text-[#B9CFCE]">
+              {currentProduct.name} workspace
+            </p>
+          )}
           {visibleItems.map((i) => {
             const Icon = i.icon;
             const active = page === i.id;
@@ -93,31 +101,6 @@ export function Sidebar({
               </button>
             );
           })}
-          <div className="mt-4 border-t border-[#314A4D] pt-3">
-            <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-[#9CB5B3]">
-              Other products
-            </p>
-            {Object.values(PRODUCTS).map((product) => {
-              const Icon =
-                product.id === PRODUCTS.electricalShop.id
-                  ? Store
-                  : ShoppingBasket;
-              const active = page === product.id;
-              return (
-                <button
-                  key={product.id}
-                  onClick={() => {
-                    setPage(product.id);
-                    if (onClose) onClose();
-                  }}
-                  className={`pw-nav-item w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm transition ${active ? "pw-nav-item-active" : ""}`}
-                >
-                  <Icon size={16} />
-                  <span className="flex-1 text-left">{product.name}</span>
-                </button>
-              );
-            })}
-          </div>
         </nav>
         {!offlineAccessEnabled && (
           <button
@@ -314,8 +297,10 @@ export function TopBar({
                           <p className="font-semibold text-[#0B3B45]">
                             {n.title}
                           </p>
-                          <span className="text-[9px] text-green-700 font-bold bg-green-100 px-1.5 py-0.5 rounded">
-                            Read
+                          <span
+                            className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${n.read ? "text-green-700 bg-green-100" : "text-amber-800 bg-amber-100"}`}
+                          >
+                            {n.read ? "Read" : "New"}
                           </span>
                         </div>
                         <p className="text-gray-600 mt-1">{n.msg}</p>
