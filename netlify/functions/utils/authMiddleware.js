@@ -57,7 +57,7 @@ const withAuth = (handler) => {
           body: JSON.stringify({ error: "TokenExpired" }) 
         };
       } 
-      
+
       if (error.name === 'JsonWebTokenError' || error.name === 'NotBeforeError') {
         return { 
           statusCode: 401, 

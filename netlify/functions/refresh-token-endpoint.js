@@ -60,7 +60,7 @@ exports.handler = async (event, _context) => {
 
   } catch (error) {
     console.error("Refresh processing failure:", error.message);
-    
+
     // Differentiate between expired tokens vs invalid/forged signatures if needed, 
     // otherwise gracefully reject compromised/invalid tokens with 403.
     const errorMessage = error.name === 'TokenExpiredError' 

@@ -30,12 +30,12 @@ const syncHandler = async (event, context) => {
     // NOTE: If this is deployed on AWS Lambda and you want true background processing 
     // without blocking the HTTP response, push this task to an SQS Queue or EventBridge here 
     // instead of using a blocking `setTimeout`.
-    
+
     // Simulating asynchronous dispatch or processing:
     // await dispatchToQueue(payload); 
 
     console.log("Background synchronization task queued successfully.");[cite: 3]
-    
+
     return {
       statusCode: 202,
       headers: { "Content-Type": "application/json" },
