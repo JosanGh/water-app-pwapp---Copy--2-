@@ -264,7 +264,7 @@ export function LoginScreen({
             {/* Subscription Required & WhatsApp/Call Support Box */}
             <div className="bg-white dark:bg-[#18262C] p-6 rounded-2xl border border-[#EDEFEA] dark:border-[#263A42] text-center space-y-4">
               <div className="w-16 h-16 mx-auto rounded-xl bg-[#1C8C9E] flex items-center justify-center shadow-md">
-                <img src="./assets/images/ManasXplorer-logo.jpg" alt="ManasXplorer Logo" className="w-10 h-10 object-contain" />
+                <img src="../assets/images/ManasXplorer-logo.jpg" alt="ManasXplorer Logo" className="w-10 h-10 object-contain" />
               </div>
 
               <h2 className="text-base font-bold text-[#0B3B45] dark:text-cyan-200">
